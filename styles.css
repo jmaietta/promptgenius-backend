@@ -1,0 +1,31 @@
+/* PromptGenius Extension Styles
+   Version 1.2.0
+   
+   Core styles are injected by content.js for isolation.
+   This file provides fallback utilities.
+*/
+
+/* Ensure elements don't inherit conflicting site styles */
+#promptgenius-btn,
+#promptgenius-panel,
+#promptgenius-panel * {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  line-height: 1.5;
+}
+
+/* Animation keyframes */
+@keyframes pg-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pg-slide-in {
+  from { 
+    opacity: 0; 
+    transform: translateX(10px); 
+  }
+  to { 
+    opacity: 1; 
+    transform: translateX(0); 
+  }
+}

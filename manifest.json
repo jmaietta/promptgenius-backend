@@ -1,0 +1,52 @@
+{
+  "manifest_version": 3,
+  "name": "PromptGenius",
+  "version": "1.3.0",
+  "description": "AI-powered prompt optimization for any LLM chat interface",
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "PromptGenius"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://claude.ai/*",
+        "https://chat.openai.com/*",
+        "https://chatgpt.com/*",
+        "https://chat.com/*",
+        "https://gemini.google.com/*",
+        "https://copilot.microsoft.com/*"
+      ],
+      "js": ["content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "permissions": [
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://claude.ai/*",
+    "https://chat.openai.com/*",
+    "https://chatgpt.com/*",
+    "https://chat.com/*",
+    "https://gemini.google.com/*",
+    "https://copilot.microsoft.com/*",
+    "https://promptgenius-backend-e1h1.onrender.com/*"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["icon16.png", "icon48.png", "icon128.png"],
+      "matches": ["https://claude.ai/*", "https://chat.openai.com/*", "https://chatgpt.com/*", "https://chat.com/*", "https://gemini.google.com/*", "https://copilot.microsoft.com/*"]
+    }
+  ],
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA9uyJViE4GHYSwowaxRt09eExrqYswbZcrOodXf5l+mbwgYduzmLbUKpoOaYvLHZ0PEcHS3oggZtGP/b/hbuDNMl8BRtCcnP2iPvZV7VHN9rkiZdskNoU+zyBh7pOmhi3GJp8oCwl4AYYfrNbES3KalrC36FYV014/cgt7PfplSL+UmJL1Wc5vVEcy46F01mEZVP9l+GYgbz9+kQq3X+5u9HwiMHQtvJ88qZ8NurZlVHuyG8jyel3q1GoH2M3k0j22SnE31ShS+PowJUtk+dodmOUvUXeCAMNcO0SAyZPLjFn1l6PFthL05fM2mN335o4HbtXaWg6PH80ABRDLnWlfwIDAQAB"
+}
