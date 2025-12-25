@@ -12,38 +12,24 @@ const PORT = process.env.PORT || 3000;
 // =============================================================================
 
 const config = {
-  // Your Chrome extension ID (update if you republish)
   extensionId: 'lmpjbngkepccmecmcfokcggaedkpljdh',
-  
-  // Rate limiting
-  rateLimitWindow: 60 * 1000,  // 1 minute
-  rateLimitMax: 10,            // requests per window
-  
-  // Input validation
+  rateLimitWindow: 60 * 1000,
+  rateLimitMax: 10,
   maxPromptLength: 2000,
   minPromptLength: 3,
-  
-  // Request timeout (prevents hanging requests)
-  requestTimeout: 30000,       // 30 seconds
-  
-  // Gemini settings
+  requestTimeout: 30000,
   geminiModel: 'gemini-1.5-flash',
-  geminiTemperature: 0.3,
-  geminiMaxTokens: 1000,
+  geminiTemperature: 0.4,
+  geminiMaxTokens: 2000,
 };
 
 // =============================================================================
-// LOGGING UTILITY
+// LOGGING
 // =============================================================================
 
 const log = {
   info: (message, data = {}) => {
-    console.log(JSON.stringify({
-      level: 'info',
-      timestamp: new Date().toISOString(),
-      message,
-      ...data
-    }));
+    console.log(JSON.stringify({ level: 'info', timestamp: new Date().toISOString(), message, ...data }));
   },
   error: (message, error = null, data = {}) => {
     console.error(JSON.stringify({
@@ -54,14 +40,6 @@ const log = {
       stack: process.env.NODE_ENV !== 'production' ? error?.stack : undefined,
       ...data
     }));
-  },
-  warn: (message, data = {}) => {
-    console.warn(JSON.stringify({
-      level: 'warn',
-      timestamp: new Date().toISOString(),
-      message,
-      ...data
-    }));
   }
 };
 
@@ -69,20 +47,14 @@ const log = {
 // MIDDLEWARE
 // =============================================================================
 
-// Security headers
 app.use(helmet());
-
-// Parse JSON with size limit
 app.use(express.json({ limit: '10kb' }));
-
-// CORS - restrict to your extension in production
 app.use(cors({
   origin: process.env.NODE_ENV === 'production'
     ? [`chrome-extension://${config.extensionId}`]
     : true
 }));
 
-// Rate limiting on API routes
 const limiter = rateLimit({
   windowMs: config.rateLimitWindow,
   max: config.rateLimitMax,
@@ -92,10 +64,8 @@ const limiter = rateLimit({
 });
 app.use('/api', limiter);
 
-// Request timeout middleware
 app.use((req, res, next) => {
   req.setTimeout(config.requestTimeout, () => {
-    log.warn('Request timeout', { path: req.path, method: req.method });
     if (!res.headersSent) {
       res.status(408).json({ error: 'Request timeout' });
     }
@@ -107,23 +77,16 @@ app.use((req, res, next) => {
 // ROUTES
 // =============================================================================
 
-// Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({
-    status: 'OK',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime()
-  });
+  res.json({ status: 'OK', timestamp: new Date().toISOString(), uptime: process.uptime() });
 });
 
-// Prompt optimization endpoint
 app.post('/api/optimize', async (req, res) => {
   const startTime = Date.now();
-  
+
   try {
     const { prompt } = req.body;
 
-    // Validation
     if (!prompt || typeof prompt !== 'string') {
       return res.status(400).json({ error: 'Valid prompt is required' });
     }
@@ -131,37 +94,28 @@ app.post('/api/optimize', async (req, res) => {
     const trimmedPrompt = prompt.trim();
 
     if (trimmedPrompt.length > config.maxPromptLength) {
-      return res.status(400).json({ 
-        error: `Prompt too long (max ${config.maxPromptLength} characters)` 
-      });
+      return res.status(400).json({ error: `Prompt too long (max ${config.maxPromptLength} characters)` });
     }
 
     if (trimmedPrompt.length < config.minPromptLength) {
       return res.status(400).json({ error: 'Prompt too short' });
     }
 
-    // Call Gemini API
-    const optimizedPrompt = await optimizeWithGemini(trimmedPrompt);
-
+    const versions = await optimizeWithGemini(trimmedPrompt);
     const duration = Date.now() - startTime;
-    log.info('Prompt optimized', {
-      originalLength: prompt.length,
-      optimizedLength: optimizedPrompt.length,
-      durationMs: duration
-    });
+
+    log.info('Prompt optimized', { originalLength: prompt.length, durationMs: duration });
 
     res.json({
       success: true,
-      optimizedPrompt,
-      originalLength: prompt.length,
-      optimizedLength: optimizedPrompt.length
+      versions,
+      originalLength: prompt.length
     });
 
   } catch (error) {
     const duration = Date.now() - startTime;
     log.error('Optimization failed', error, { durationMs: duration });
 
-    // Return appropriate error without exposing internals
     if (error.message.includes('API key')) {
       res.status(500).json({ error: 'Service configuration error' });
     } else if (error.message.includes('quota') || error.message.includes('429')) {
@@ -175,7 +129,7 @@ app.post('/api/optimize', async (req, res) => {
 });
 
 // =============================================================================
-// GEMINI API INTEGRATION
+// GEMINI API - PROMPT OPTIMIZATION ENGINE
 // =============================================================================
 
 async function optimizeWithGemini(prompt) {
@@ -185,25 +139,50 @@ async function optimizeWithGemini(prompt) {
     throw new Error('API key not configured');
   }
 
-  const systemPrompt = `You are PromptGenius, an expert at optimizing prompts for AI assistants.
+  const systemPrompt = `You are an expert prompt engineer. Your job is to transform user prompts into highly effective prompts that get better results from AI assistants.
 
-Your task: Improve the user's prompt while STRICTLY preserving their original intent and scope.
+INPUT PROMPT:
+"${prompt}"
+
+ANALYZE the prompt and CREATE THREE OPTIMIZED VERSIONS:
+
+## VERSION 1: STRUCTURED
+Apply these techniques:
+- Break the request into clear, numbered steps or requirements
+- Add explicit constraints (format, length, audience if inferrable)
+- Include "Think step by step" or similar chain-of-thought triggers where appropriate
+- Specify what a good response looks like
+
+## VERSION 2: DETAILED  
+Apply these techniques:
+- Assign a relevant expert role (e.g., "As an experienced software architect...")
+- Add context about why this matters or how it will be used
+- Request specific details, examples, or evidence
+- Ask for pros/cons, tradeoffs, or multiple perspectives where relevant
+
+## VERSION 3: CONCISE
+Apply these techniques:
+- Distill to the essential request
+- Remove ambiguity with precise language
+- Keep it brief but complete
+- Fix any grammar or spelling issues
 
 RULES:
-1. PRESERVE the original question's scope and openness - never narrow or constrain it
-2. NEVER add specific examples, names, numbers, or limitations the user didn't request
-3. NEVER transform broad/open questions into specific/narrow ones
-4. Fix spelling and grammar errors
-5. Add context only if it clarifies intent (not constraints)
-6. Suggest output format only if genuinely helpful
-7. If the prompt is already well-formed, return it with minimal changes
+- Preserve the user's core intent — do not change WHAT they're asking for
+- Do not add requirements they didn't imply
+- Do not narrow open-ended questions unless adding helpful structure
+- Each version should be meaningfully different, not just rewording
+- If the original prompt is already excellent, make only minor refinements
 
-Original prompt: "${prompt}"
-
-Return ONLY the improved prompt. No explanations, no preamble, no quotes around it.`;
+RESPOND IN THIS EXACT JSON FORMAT (no markdown, no code blocks, just raw JSON):
+{
+  "structured": "the structured version here",
+  "detailed": "the detailed version here", 
+  "concise": "the concise version here"
+}`;
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 25000); // 25s timeout for API call
+  const timeoutId = setTimeout(() => controller.abort(), 25000);
 
   try {
     const response = await fetch(
@@ -212,9 +191,7 @@ Return ONLY the improved prompt. No explanations, no preamble, no quotes around 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{
-            parts: [{ text: systemPrompt }]
-          }],
+          contents: [{ parts: [{ text: systemPrompt }] }],
           generationConfig: {
             temperature: config.geminiTemperature,
             maxOutputTokens: config.geminiMaxTokens,
@@ -227,11 +204,7 @@ Return ONLY the improved prompt. No explanations, no preamble, no quotes around 
     clearTimeout(timeoutId);
 
     if (!response.ok) {
-      const errorText = await response.text();
-      log.error('Gemini API error response', null, { 
-        status: response.status,
-        statusText: response.statusText 
-      });
+      log.error('Gemini API error response', null, { status: response.status });
       throw new Error(`Gemini API error: ${response.status}`);
     }
 
@@ -241,11 +214,40 @@ Return ONLY the improved prompt. No explanations, no preamble, no quotes around 
       throw new Error('Invalid response from Gemini API');
     }
 
-    return data.candidates[0].content.parts[0].text.trim();
+    const rawText = data.candidates[0].content.parts[0].text.trim();
+    
+    // Parse JSON response - handle potential markdown code blocks
+    let jsonText = rawText;
+    if (rawText.includes('```')) {
+      jsonText = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    }
+
+    try {
+      const versions = JSON.parse(jsonText);
+      
+      // Validate response structure
+      if (!versions.structured || !versions.detailed || !versions.concise) {
+        throw new Error('Missing version in response');
+      }
+
+      return {
+        structured: versions.structured.trim(),
+        detailed: versions.detailed.trim(),
+        concise: versions.concise.trim()
+      };
+    } catch (parseError) {
+      log.error('Failed to parse Gemini response', parseError, { rawText: rawText.substring(0, 500) });
+      
+      // Fallback: return the raw text as all three versions
+      return {
+        structured: rawText,
+        detailed: rawText,
+        concise: rawText
+      };
+    }
 
   } catch (error) {
     clearTimeout(timeoutId);
-    
     if (error.name === 'AbortError') {
       throw new Error('Gemini API timeout');
     }
@@ -257,62 +259,47 @@ Return ONLY the improved prompt. No explanations, no preamble, no quotes around 
 // ERROR HANDLING
 // =============================================================================
 
-// Global error handler
 app.use((error, req, res, next) => {
   log.error('Unhandled error', error, { path: req.path, method: req.method });
-  
   if (!res.headersSent) {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// 404 handler
 app.use('*', (req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
 });
 
 // =============================================================================
-// SERVER STARTUP & GRACEFUL SHUTDOWN
+// SERVER STARTUP
 // =============================================================================
 
 const server = app.listen(PORT, () => {
-  log.info('Server started', { 
-    port: PORT, 
-    environment: process.env.NODE_ENV || 'development',
-    nodeVersion: process.version
-  });
+  log.info('Server started', { port: PORT, environment: process.env.NODE_ENV || 'development' });
 });
 
-// Graceful shutdown handling
 const gracefulShutdown = (signal) => {
   log.info(`${signal} received, starting graceful shutdown`);
-  
   server.close((err) => {
     if (err) {
       log.error('Error during shutdown', err);
       process.exit(1);
     }
-    
     log.info('Server closed successfully');
     process.exit(0);
   });
-
-  // Force close after 10 seconds
   setTimeout(() => {
-    log.warn('Forcing shutdown after timeout');
+    log.info('Forcing shutdown after timeout');
     process.exit(1);
   }, 10000);
 };
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-
-// Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
   log.error('Uncaught exception', error);
   gracefulShutdown('uncaughtException');
 });
-
-process.on('unhandledRejection', (reason, promise) => {
+process.on('unhandledRejection', (reason) => {
   log.error('Unhandled rejection', reason);
 });
