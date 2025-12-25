@@ -20,7 +20,12 @@ const config = {
   rateLimitMax: 10,
   maxPromptLength: 2000,
   minPromptLength: 3,
-  requestTimeout: 30000,
+  // Give enough headroom for cold starts and upstream LLM variability.
+  // This caps end-to-end request handling.
+  requestTimeout: 90000,
+  // Abort the upstream Claude request slightly before requestTimeout so we can
+  // return a clean 504 with JSON rather than a socket-level timeout.
+  claudeTimeoutMs: 70000,
   claudeModel: 'claude-sonnet-4-20250514',
   claudeMaxTokens: 2000,
 };
@@ -66,12 +71,19 @@ const limiter = rateLimit({
 });
 app.use('/api', limiter);
 
+// End-to-end request timeout guard.
+// Use res.setTimeout so we can still send a JSON response on timeout.
 app.use((req, res, next) => {
-  req.setTimeout(config.requestTimeout, () => {
+  // Keep the socket alive long enough for the request to complete.
+  req.setTimeout(config.requestTimeout);
+
+  res.setTimeout(config.requestTimeout, () => {
     if (!res.headersSent) {
+      log.error('Request timeout', null, { path: req.path, method: req.method });
       res.status(408).json({ error: 'Request timeout' });
     }
   });
+
   next();
 });
 
@@ -185,9 +197,11 @@ VERSION 3 - CONCISE:
 Return ONLY the JSON object with the three versions.`;
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 25000);
+  const timeoutId = setTimeout(() => controller.abort(), config.claudeTimeoutMs);
 
   try {
+    const claudeStart = Date.now();
+
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -205,6 +219,9 @@ Return ONLY the JSON object with the three versions.`;
       }),
       signal: controller.signal
     });
+
+    const claudeMs = Date.now() - claudeStart;
+    log.info('Claude response received', { claudeMs, status: response.status });
 
     clearTimeout(timeoutId);
 
@@ -255,6 +272,7 @@ Return ONLY the JSON object with the three versions.`;
   } catch (error) {
     clearTimeout(timeoutId);
     if (error.name === 'AbortError') {
+      log.error('Claude request aborted due to timeout', error, { timeoutMs: config.claudeTimeoutMs });
       throw new Error('Claude API timeout');
     }
     throw error;
@@ -283,6 +301,11 @@ app.use('*', (req, res) => {
 const server = app.listen(PORT, () => {
   log.info('Server started', { port: PORT, environment: process.env.NODE_ENV || 'development' });
 });
+
+// Align Node's HTTP server timeouts with our application timeouts.
+// This helps avoid socket-level timeouts that bypass our JSON error handling.
+server.requestTimeout = config.requestTimeout;
+server.headersTimeout = config.requestTimeout + 5000;
 
 const gracefulShutdown = (signal) => {
   log.info(`${signal} received, starting graceful shutdown`);
