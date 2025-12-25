@@ -7,6 +7,9 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Required for Render.com (and other reverse proxies)
+app.set('trust proxy', 1);
+
 // =============================================================================
 // CONFIGURATION
 // =============================================================================
