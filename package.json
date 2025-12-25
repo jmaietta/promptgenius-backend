@@ -1,6 +1,6 @@
 {
   "name": "promptgenius-backend",
-  "version": "1.1.0",
+  "version": "1.3.0",
   "description": "Secure backend for PromptGenius Chrome extension",
   "main": "server.js",
   "scripts": {
@@ -8,7 +8,7 @@
     "dev": "nodemon server.js",
     "test": "echo \"No tests yet\" && exit 0"
   },
-  "keywords": ["prompt", "optimization", "ai", "gemini"],
+  "keywords": ["prompt", "optimization", "ai", "claude", "anthropic"],
   "author": "TEK2day Holdings",
   "license": "MIT",
   "dependencies": {
